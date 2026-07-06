@@ -132,7 +132,10 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///     displays. For example, set a value of `2` for an image that you
     ///     would name with the `@2x` suffix if stored in a file on disk.
     public init(urlRequest: URLRequest?, urlCache: URLCache = .shared,  scale: CGFloat = 1) where Content == Image {
-        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale) { phase in
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = urlCache
+        let urlSession = URLSession(configuration: configuration)
+        self.init(urlRequest: urlRequest, urlSession: urlSession, scale: scale) { phase in
 #if os(macOS)
             phase.image ?? Image(nsImage: .init())
 #else
@@ -209,7 +212,10 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///   - placeholder: A closure that returns the view to show until the
     ///     load operation completes successfully.
     public init<I, P>(urlRequest: URLRequest?, urlCache: URLCache = .shared,  scale: CGFloat = 1, @ViewBuilder content: @escaping (Image) -> I, @ViewBuilder placeholder: @escaping () -> P) where Content == _ConditionalContent<I, P>, I : View, P : View {
-        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale) { phase in
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = urlCache
+        let urlSession = URLSession(configuration: configuration)
+        self.init(urlRequest: urlRequest, urlSession: urlSession, scale: scale) { phase in
             if let image = phase.image {
                 content(image)
             } else {
@@ -255,7 +261,10 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///     returns the view to display for the specified phase.
     public init(url: URL?, urlCache: URLCache = .shared, scale: CGFloat = 1, transaction: Transaction = Transaction(), @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
         let urlRequest = url == nil ? nil : URLRequest(url: url!)
-        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale, transaction: transaction, content: content)
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = urlCache
+        let urlSession = URLSession(configuration: configuration)
+        self.init(urlRequest: urlRequest, urlSession: urlSession, scale: scale, transaction: transaction, content: content)
     }
     
     /// Loads and displays a modifiable image from the specified URL in phases.
@@ -296,15 +305,38 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     public init(urlRequest: URLRequest?, urlCache: URLCache = .shared, scale: CGFloat = 1, transaction: Transaction = Transaction(), @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
         let configuration = URLSessionConfiguration.default
         configuration.urlCache = urlCache
+        let urlSession = URLSession(configuration: configuration)
+        self.init(urlRequest: urlRequest, urlSession: urlSession, scale: scale, transaction: transaction, content: content)
+    }
+
+    /// Loads and displays a modifiable image from the specified URL request in phases.
+    ///
+    /// If you set the asynchronous image's URL request to `nil`, or after you
+    /// set the URL request to a value but before the load operation completes,
+    /// the phase is ``AsyncImagePhase/empty``. After the operation completes,
+    /// the phase becomes either ``AsyncImagePhase/failure(_:)`` or
+    /// ``AsyncImagePhase/success(_:)``.
+    ///
+    /// - Parameters:
+    ///   - urlRequest: The URL request of the image to display.
+    ///   - urlSession: The URL session to use for loading the image.
+    ///   - scale: The scale to use for the image. The default is `1`. Set a
+    ///     different value when loading images designed for higher resolution
+    ///     displays. For example, set a value of `2` for an image that you
+    ///     would name with the `@2x` suffix if stored in a file on disk.
+    ///   - transaction: The transaction to use when the phase changes.
+    ///   - content: A closure that takes the load phase as an input, and
+    ///     returns the view to display for the specified phase.
+    public init(urlRequest: URLRequest?, urlSession: URLSession, scale: CGFloat = 1, transaction: Transaction = Transaction(), @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
         self.urlRequest = urlRequest
-        self.urlSession =  URLSession(configuration: configuration)
+        self.urlSession = urlSession
         self.scale = scale
         self.transaction = transaction
         self.content = content
         
         self._phase = State(wrappedValue: .empty)
         do {
-            if let urlRequest = urlRequest, let image = try cachedImage(from: urlRequest, cache: urlCache) {
+            if let urlRequest = urlRequest, let image = try cachedImage(from: urlRequest, cache: urlSession.configuration.urlCache ?? .shared) {
                 self._phase = State(wrappedValue: .success(image))
             }
         } catch {
